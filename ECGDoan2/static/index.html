@@ -1,0 +1,1370 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CardiacAI V4 — Phân tích ECG Tim mạch</title>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --white:      #ffffff;
+  --bg:         #f4f6f9;
+  --surface:    #ffffff;
+  --border:     #e2e8f0;
+  --border-md:  #cbd5e1;
+  --blue:       #1a56db;
+  --blue-light: #eff6ff;
+  --blue-mid:   #3b82f6;
+  --red:        #dc2626;
+  --red-light:  #fef2f2;
+  --green:      #16a34a;
+  --green-light:#f0fdf4;
+  --amber:      #d97706;
+  --amber-light:#fffbeb;
+  --text:       #0f172a;
+  --text-md:    #334155;
+  --text-dim:   #64748b;
+  --text-xdim:  #94a3b8;
+  --shadow-sm:  0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
+  --shadow:     0 4px 16px rgba(0,0,0,.08), 0 1px 4px rgba(0,0,0,.04);
+  --shadow-lg:  0 12px 40px rgba(0,0,0,.10), 0 4px 12px rgba(0,0,0,.05);
+  --radius:     10px;
+  --font-body:  'IBM Plex Sans', sans-serif;
+  --font-serif: 'Lora', serif;
+  --font-mono:  'IBM Plex Mono', monospace;
+  --severity-danger:  #ef4444;
+  --severity-warning: #f59e0b;
+  --severity-info:    #3b82f6;
+  --severity-normal:  #22c55e;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+/* ── TOAST ─────────────────────────────────────────────── */
+#toastContainer {
+  position: fixed; top: 80px; right: 24px; z-index: 9999;
+  display: flex; flex-direction: column; gap: 10px;
+  pointer-events: none;
+}
+.toast {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 16px; border-radius: 10px;
+  box-shadow: var(--shadow-lg); min-width: 280px; max-width: 380px;
+  font-size: 13px; line-height: 1.5;
+  pointer-events: all;
+  animation: toastIn .3s ease;
+  border: 1px solid transparent;
+}
+.toast.error   { background: #fff1f1; border-color: #fca5a5; color: #991b1b; }
+.toast.success { background: #f0fdf4; border-color: #86efac; color: #166534; }
+.toast.info    { background: var(--blue-light); border-color: #93c5fd; color: #1e3a8a; }
+.toast-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+.toast-close { margin-left: auto; background: none; border: none; cursor: pointer; font-size: 14px; color: inherit; opacity: .6; padding: 0 0 0 8px; }
+.toast-close:hover { opacity: 1; }
+@keyframes toastIn { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:translateX(0); } }
+@keyframes toastOut { to { opacity:0; transform:translateX(20px); } }
+
+/* ── HEADER ────────────────────────────────────────────── */
+header {
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  position: sticky; top: 0; z-index: 100;
+}
+.header-inner {
+  max-width: 1200px; margin: 0 auto;
+  padding: 0 32px; height: 64px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.logo { display: flex; align-items: center; gap: 12px; }
+.logo-mark {
+  width: 38px; height: 38px;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0;
+}
+.logo-name {
+  font-family: var(--font-serif);
+  font-size: 20px; font-weight: 700;
+  color: var(--text); letter-spacing: -.3px;
+}
+.logo-desc { font-size: 11px; color: var(--text-dim); font-weight: 400; margin-top: 1px; }
+.header-right { display: flex; align-items: center; gap: 16px; }
+.header-pill {
+  font-size: 11px; font-weight: 500;
+  padding: 4px 12px; border-radius: 20px;
+  background: var(--blue-light); color: var(--blue);
+  border: 1px solid #bfdbfe; letter-spacing: .3px;
+}
+.header-time { font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); }
+
+/* ── LAYOUT ────────────────────────────────────────────── */
+.container {
+  max-width: 1200px; margin: 0 auto;
+  padding: 32px 32px 60px;
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 24px; align-items: start;
+}
+
+/* ── CARD ──────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.card + .card { margin-top: 20px; }
+.card-title {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600;
+  color: var(--text-md);
+  letter-spacing: .2px; text-transform: uppercase;
+}
+.card-title .icon { font-size: 15px; line-height: 1; }
+.card-title-actions { margin-left: auto; display: flex; gap: 8px; }
+
+/* ── UPLOAD PAIR ──────────────────────────────────────── */
+.upload-pair {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 12px; padding: 20px;
+}
+.upload-slot {
+  border: 2px dashed var(--border-md);
+  border-radius: 8px; padding: 24px 12px;
+  text-align: center; cursor: pointer;
+  transition: all .2s;
+}
+.upload-slot:hover { border-color: var(--blue-mid); background: var(--blue-light); }
+.upload-slot.has-file { border-color: var(--green); border-style: solid; background: var(--green-light); }
+.upload-slot.dragging { border-color: var(--blue); background: var(--blue-light); transform: scale(1.02); box-shadow: 0 0 0 3px rgba(59,130,246,.15); }
+.upload-slot .slot-icon { font-size: 28px; margin-bottom: 6px; display: block; }
+.upload-slot .slot-label { font-size: 12px; font-weight: 600; color: var(--text-md); margin-bottom: 2px; }
+.upload-slot .slot-sub { font-size: 10px; color: var(--text-dim); }
+.upload-slot .slot-name {
+  font-size: 11px; color: var(--blue);
+  font-family: var(--font-mono);
+  margin-top: 6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.upload-slot.has-file .slot-name { color: var(--green); }
+
+/* ── ECG PREVIEW ──────────────────────────────────────── */
+#ecgPlotWrap { display: none; padding: 16px 20px 4px; }
+.ecg-plot-box {
+  position: relative; border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--border); background: #0f172a;
+}
+#ecgPlotImg { width: 100%; display: block; border-radius: 8px; }
+.ecg-plot-info {
+  padding: 8px 12px;
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+.btn-reupload {
+  display: flex; align-items: center; justify-content: center;
+  gap: 6px; width: 100%; margin: 10px 0 16px; padding: 8px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: none; cursor: pointer;
+  font-size: 12px; color: var(--text-dim); font-family: var(--font-body);
+  transition: all .15s;
+}
+.btn-reupload:hover { border-color: var(--blue-mid); color: var(--blue); }
+
+/* ── PATIENT INFO ──────────────────────────────────────── */
+.patient-form { padding: 16px 20px 20px; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-row + .form-row { margin-top: 12px; }
+.form-full { grid-column: 1/-1; }
+.field label {
+  display: block; font-size: 11px; font-weight: 600;
+  color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px;
+  margin-bottom: 5px;
+}
+.field input, .field select {
+  width: 100%; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 6px;
+  font-size: 13px; font-family: var(--font-body);
+  color: var(--text); background: var(--white);
+  outline: none; transition: border-color .2s;
+}
+.field input:focus, .field select:focus {
+  border-color: var(--blue-mid);
+  box-shadow: 0 0 0 3px rgba(59,130,246,.1);
+}
+.field input.invalid { border-color: var(--red); }
+.field-error { font-size: 11px; color: var(--red); margin-top: 4px; display: none; }
+.field-error.show { display: block; }
+
+/* ── SENSITIVITY ───────────────────────────────────────── */
+.sensitivity-box { padding: 16px 20px 20px; }
+.sens-label { font-size: 12px; font-weight: 600; color: var(--text-md); margin-bottom: 4px; }
+.sens-desc { font-size: 11px; color: var(--text-dim); margin-bottom: 14px; line-height: 1.5; }
+.sens-options { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+.sens-opt {
+  border: 2px solid var(--border); border-radius: 8px;
+  padding: 10px 8px; text-align: center;
+  cursor: pointer; transition: all .2s; user-select: none;
+}
+.sens-opt:hover { border-color: var(--blue-mid); }
+.sens-opt.active { border-color: var(--blue); background: var(--blue-light); }
+.sens-opt .sens-icon { font-size: 20px; margin-bottom: 4px; display: block; }
+.sens-opt .sens-name { font-size: 11px; font-weight: 600; color: var(--text-md); margin-bottom: 2px; }
+.sens-opt .sens-hint { font-size: 10px; color: var(--text-dim); line-height: 1.3; }
+.sens-opt.active .sens-name { color: var(--blue); }
+
+/* ── ANALYZE BTN ───────────────────────────────────────── */
+.btn-analyze {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: calc(100% - 40px); margin: 4px 20px 20px; padding: 13px;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: #fff; border: none; border-radius: 8px;
+  font-family: var(--font-body); font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: all .2s;
+}
+.btn-analyze:hover { background: linear-gradient(135deg, #dc2626, #b91c1c); box-shadow: 0 4px 12px rgba(220,38,38,.3); }
+.btn-analyze:disabled { background: var(--border-md); color: var(--text-dim); cursor: not-allowed; box-shadow: none; }
+
+/* ── HISTORY CARD ──────────────────────────────────────── */
+.history-list { max-height: 280px; overflow-y: auto; }
+.history-empty { padding: 20px; text-align: center; font-size: 12px; color: var(--text-dim); }
+.history-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background .15s;
+}
+.history-item:last-child { border-bottom: none; }
+.history-item:hover { background: var(--bg); }
+.hist-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.hist-dot.normal  { background: var(--green); }
+.hist-dot.warning { background: var(--amber); }
+.hist-dot.danger  { background: var(--red); }
+.hist-info { flex: 1; min-width: 0; }
+.hist-name { font-size: 13px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hist-meta { font-size: 11px; color: var(--text-dim); margin-top: 1px; }
+.hist-badge {
+  font-size: 10px; font-weight: 600; padding: 2px 8px;
+  border-radius: 10px; white-space: nowrap; flex-shrink: 0;
+}
+.hist-badge.normal  { background: var(--green-light); color: var(--green); }
+.hist-badge.warning { background: var(--amber-light); color: var(--amber); }
+.hist-badge.danger  { background: var(--red-light); color: var(--red); }
+.hist-del {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-xdim); font-size: 14px; padding: 2px 4px;
+  border-radius: 4px; transition: all .15s; flex-shrink: 0;
+}
+.hist-del:hover { color: var(--red); background: var(--red-light); }
+.btn-clear-history {
+  display: block; width: calc(100% - 32px); margin: 10px 16px 12px;
+  padding: 7px; border: 1px solid var(--border); border-radius: 6px;
+  background: none; cursor: pointer; font-size: 11px; color: var(--text-dim);
+  font-family: var(--font-body); transition: all .15s; text-align: center;
+}
+.btn-clear-history:hover { border-color: var(--red); color: var(--red); }
+
+/* ── RIGHT COLUMN ──────────────────────────────────────── */
+#emptyState {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  padding: 80px 40px; text-align: center;
+}
+.empty-illo { font-size: 64px; margin-bottom: 20px; opacity: .35; }
+.empty-title {
+  font-family: var(--font-serif); font-size: 20px;
+  color: var(--text-md); margin-bottom: 8px;
+}
+.empty-sub { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+
+#resultsWrap { display: none; }
+
+/* ── REPORT HEADER ─────────────────────────────────────── */
+.report-header {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  padding: 24px 28px;
+  display: flex; align-items: flex-start; justify-content: space-between;
+  margin-bottom: 20px;
+}
+.report-subtitle {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 1px; color: var(--text-dim); margin-bottom: 6px;
+}
+.report-title {
+  font-family: var(--font-serif); font-size: 22px; font-weight: 700;
+  color: var(--text); margin-bottom: 4px;
+}
+.report-meta {
+  font-size: 12px; color: var(--text-dim);
+  display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px;
+}
+.report-meta span { display: flex; align-items: center; gap: 4px; }
+.report-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn-print {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--white);
+  font-size: 12px; font-weight: 600; color: var(--text-md);
+  cursor: pointer; font-family: var(--font-body); transition: all .15s;
+}
+.btn-print:hover { border-color: var(--blue-mid); color: var(--blue); background: var(--blue-light); }
+.btn-reanalyze {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--white);
+  font-size: 12px; font-weight: 600; color: var(--text-md);
+  cursor: pointer; font-family: var(--font-body); transition: all .15s;
+}
+.btn-reanalyze:hover { border-color: var(--blue-mid); color: var(--blue); background: var(--blue-light); }
+
+/* ── VERDICT ───────────────────────────────────────────── */
+.verdict-box {
+  padding: 14px 20px; border-radius: 8px;
+  text-align: center; min-width: 160px; border: 1.5px solid; flex-shrink: 0;
+}
+.verdict-box.normal   { background: var(--green-light); border-color: #bbf7d0; }
+.verdict-box.abnormal { background: var(--red-light); border-color: #fecaca; }
+.verdict-box.warning  { background: var(--amber-light); border-color: #fde68a; }
+.verdict-icon { font-size: 28px; margin-bottom: 4px; }
+.verdict-label {
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px;
+}
+.verdict-box.normal .verdict-label   { color: var(--green); }
+.verdict-box.abnormal .verdict-label { color: var(--red); }
+.verdict-box.warning .verdict-label  { color: var(--amber); }
+.verdict-count { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+
+/* Severity badges */
+.severity-badge {
+  font-size: 9px; font-weight: 700;
+  padding: 2px 8px; border-radius: 10px;
+  text-transform: uppercase; letter-spacing: .5px;
+  white-space: nowrap; display: inline-block;
+}
+.severity-badge.danger  { background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }
+.severity-badge.warning { background: #fffbeb; color: #d97706; border: 1px solid #fde68a; }
+.severity-badge.info    { background: #eff6ff; color: #1a56db; border: 1px solid #bfdbfe; }
+.severity-badge.normal  { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+
+/* Finding cards */
+.findings-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 12px; padding: 16px 20px 20px;
+}
+.finding-card {
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: var(--radius); padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+  animation: cardIn .4s ease both;
+  position: relative; overflow: hidden;
+}
+.finding-card.positive { border-color: #fca5a5; background: linear-gradient(135deg, #fff5f5 0%, #fff 60%); }
+.finding-card.positive::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0;
+  height: 3px; background: var(--red);
+}
+.finding-card.sev-danger  { border-color: #fca5a5; }
+.finding-card.sev-danger::before  { background: #ef4444; }
+.finding-card.sev-warning { border-color: #fde68a; background: linear-gradient(135deg, #fffbeb 0%, #fff 60%); }
+.finding-card.sev-warning::before { background: #f59e0b; }
+.finding-card.sev-info    { border-color: #bfdbfe; background: linear-gradient(135deg, #eff6ff 0%, #fff 60%); }
+.finding-card.sev-info::before    { background: #3b82f6; }
+@keyframes cardIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+.finding-top {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.finding-name { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.finding-name-en { font-size: 11px; color: var(--text-dim); font-style: italic; }
+.finding-badges { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; }
+.confidence-row { display: flex; align-items: center; gap: 10px; }
+.conf-label { font-size: 11px; color: var(--text-dim); flex-shrink: 0; }
+.conf-track {
+  flex: 1; height: 6px; background: var(--border);
+  border-radius: 3px; position: relative; overflow: visible;
+}
+.conf-fill { height: 100%; border-radius: 3px; width: 0; transition: width 1s cubic-bezier(.25,.46,.45,.94); }
+.conf-fill.high { background: linear-gradient(90deg, #ef4444, #f87171); }
+.conf-fill.mid  { background: linear-gradient(90deg, #f97316, #fb923c); }
+.conf-fill.low  { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+.conf-pct {
+  font-family: var(--font-mono); font-size: 12px; font-weight: 500;
+  color: var(--text-md); flex-shrink: 0; min-width: 36px; text-align: right;
+}
+.thr-mark {
+  position: absolute; top: -4px; bottom: -4px;
+  width: 2px; background: var(--text); border-radius: 1px; z-index: 2;
+}
+.thr-mark::after {
+  content: attr(data-label); position: absolute;
+  bottom: calc(100% + 3px); left: 50%; transform: translateX(-50%);
+  font-size: 8px; color: var(--text-dim); white-space: nowrap;
+  background: var(--white); padding: 0 3px; border-radius: 2px;
+  border: 1px solid var(--border); line-height: 1.3;
+}
+.finding-thr-info { font-size: 10px; color: var(--text-dim); margin-top: 6px; font-family: var(--font-mono); }
+
+/* Summary card */
+.summary-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  margin-bottom: 20px; overflow: hidden;
+}
+
+/* ECG Visualization section */
+.ecg-viz-section {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  overflow: hidden; margin-bottom: 20px;
+}
+.ecg-viz-plot { padding: 0; background: #0f172a; }
+.ecg-viz-plot img { width: 100%; display: block; }
+
+/* All findings table */
+.findings-table {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  overflow: hidden; margin-bottom: 20px;
+}
+.ft-toolbar {
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg);
+}
+.ft-toggle-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 500; color: var(--text-md);
+  cursor: pointer; user-select: none;
+}
+.ft-toggle-label input[type="checkbox"] { accent-color: var(--blue); width: 14px; height: 14px; cursor: pointer; }
+.ft-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 120px 80px 80px;
+  padding: 11px 20px; border-bottom: 1px solid var(--border);
+  align-items: center; transition: background .15s;
+  animation: rowIn .3s ease both;
+}
+@keyframes rowIn { from { opacity:0; } to { opacity:1; } }
+.ft-row:last-child { border-bottom: none; }
+.ft-row:hover { background: var(--bg); }
+.ft-row.header {
+  background: var(--bg); animation: none;
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .5px; color: var(--text-dim);
+}
+.ft-name  { font-size: 13px; font-weight: 500; }
+.ft-abbr  { font-size: 10px; color: var(--text-dim); font-family: var(--font-mono); }
+.ft-en    { font-size: 11px; color: var(--text-dim); font-style: italic; }
+.ft-bar   { padding-right: 16px; }
+.ft-bar-track {
+  height: 5px; background: var(--border); border-radius: 3px;
+  position: relative; overflow: visible;
+}
+.ft-bar-fill { height: 100%; border-radius: 3px; width: 0; transition: width .8s ease; }
+.ft-bar-fill.pos { background: var(--red); }
+.ft-bar-fill.neg { background: var(--blue-mid); }
+.ft-thr-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text); border-radius: 1px; }
+.ft-pct    { font-family: var(--font-mono); font-size: 12px; color: var(--text-md); }
+.ft-thr-sub{ font-size: 9px; color: var(--text-xdim); font-family: var(--font-mono); }
+.ft-tag    { font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 10px; text-align: center; }
+.ft-tag.pos{ background: #fee2e2; color: var(--red); }
+.ft-tag.neg{ background: #f0fdf4; color: var(--green); }
+
+/* Sensitivity badge in report */
+.sens-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 600; padding: 2px 10px;
+  border-radius: 10px; background: var(--blue-light); color: var(--blue);
+  border: 1px solid #bfdbfe;
+}
+
+/* Disclaimer */
+.disclaimer {
+  background: var(--amber-light); border: 1px solid #fde68a;
+  border-radius: 8px; padding: 14px 18px;
+  display: flex; gap: 12px; align-items: flex-start;
+  font-size: 12px; color: #78350f; line-height: 1.6;
+}
+.disclaimer-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+
+/* Loading overlay */
+#loadingOverlay {
+  display: none; position: fixed; inset: 0; z-index: 200;
+  background: rgba(255,255,255,.85); backdrop-filter: blur(6px);
+  align-items: center; justify-content: center; flex-direction: column; gap: 16px;
+}
+#loadingOverlay.show { display: flex; }
+.spinner {
+  width: 48px; height: 48px;
+  border: 3px solid var(--border); border-top-color: #ef4444;
+  border-radius: 50%; animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.progress-wrap { width: 240px; }
+.progress-track { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-bottom: 8px; }
+.progress-fill { height: 100%; background: linear-gradient(90deg, #ef4444, #dc2626); border-radius: 2px; width: 0; transition: width .5s ease; }
+.loading-text { font-size: 14px; font-weight: 500; color: var(--text-md); }
+.loading-sub  { font-size: 12px; color: var(--text-dim); text-align: center; min-height: 18px; }
+
+/* ── PRINT STYLES ──────────────────────────────────────── */
+@media print {
+  header, .container > div:first-child, #toastContainer,
+  #loadingOverlay, .report-actions, .ft-toolbar,
+  .btn-reupload, .disclaimer { display: none !important; }
+  body { background: #fff !important; }
+  .container { display: block !important; padding: 0 !important; }
+  #resultsWrap { display: block !important; }
+  .report-header { box-shadow: none !important; border: 1px solid #ddd !important; margin-bottom: 12px !important; }
+  .finding-card, .summary-card, .ecg-viz-section, .findings-table { box-shadow: none !important; break-inside: avoid; }
+  .disclaimer { display: flex !important; }
+  @page { margin: 20mm; }
+}
+
+/* ── RESPONSIVE ────────────────────────────────────────── */
+@media (min-width: 640px) and (max-width: 960px) {
+  .container { grid-template-columns: 300px 1fr; padding: 20px 16px; }
+}
+@media (max-width: 639px) {
+  .container { grid-template-columns: 1fr; padding: 16px; }
+  .findings-grid { grid-template-columns: 1fr; }
+  .ft-row { grid-template-columns: 1fr 80px 60px; }
+  .ft-bar { display: none; }
+  .report-header { flex-direction: column; gap: 16px; }
+  .upload-pair { grid-template-columns: 1fr; }
+  .report-meta { gap: 8px; }
+  .header-pill { display: none; }
+}
+@media (max-width: 960px) {
+  .findings-grid { grid-template-columns: 1fr; }
+  .report-header { flex-direction: column; gap: 16px; }
+}
+</style>
+</head>
+<body>
+
+<!-- Toast Container -->
+<div id="toastContainer"></div>
+
+<!-- Loading overlay -->
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="progress-wrap">
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="loading-text" style="text-align:center">Đang phân tích tín hiệu ECG...</div>
+  </div>
+  <div class="loading-sub" id="loadStep">Model AI đang xử lý điện tâm đồ</div>
+</div>
+
+<!-- HEADER -->
+<header>
+  <div class="header-inner">
+    <div class="logo">
+      <div class="logo-mark">&#10084;&#65039;</div>
+      <div>
+        <div class="logo-name">CardiacAI V4</div>
+        <div class="logo-desc">Phân tích ECG 12 chuyển đạo — 27 bệnh tim mạch</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="header-pill">Multi-scale CNN + Transformer · 20M params</span>
+      <span class="header-time" id="clock"></span>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- LEFT COLUMN -->
+  <div>
+
+    <!-- Upload card -->
+    <div class="card">
+      <div class="card-title"><span class="icon">&#128193;</span> File ECG</div>
+      <div class="upload-pair" id="uploadPair">
+        <div class="upload-slot" id="slotMat"
+          role="button" tabindex="0" aria-label="Tải lên file .mat tín hiệu ECG"
+          onclick="document.getElementById('fileMat').click()"
+          onkeydown="if(event.key==='Enter'||event.key===' ')document.getElementById('fileMat').click()">
+          <span class="slot-icon">&#128200;</span>
+          <div class="slot-label">File .mat</div>
+          <div class="slot-sub">Kéo thả hoặc click</div>
+          <div class="slot-name" id="matName">Chưa chọn file</div>
+          <input type="file" id="fileMat" accept=".mat" style="display:none">
+        </div>
+        <div class="upload-slot" id="slotHea"
+          role="button" tabindex="0" aria-label="Tải lên file .hea header ECG"
+          onclick="document.getElementById('fileHea').click()"
+          onkeydown="if(event.key==='Enter'||event.key===' ')document.getElementById('fileHea').click()">
+          <span class="slot-icon">&#128203;</span>
+          <div class="slot-label">File .hea</div>
+          <div class="slot-sub">Kéo thả hoặc click</div>
+          <div class="slot-name" id="heaName">Chưa chọn file</div>
+          <input type="file" id="fileHea" accept=".hea" style="display:none">
+        </div>
+      </div>
+      <div id="ecgPlotWrap">
+        <div class="ecg-plot-box">
+          <img id="ecgPlotImg" src="" alt="ECG Plot">
+        </div>
+        <div class="ecg-plot-info">
+          <span id="plotInfo"></span>
+        </div>
+        <button class="btn-reupload" onclick="resetUpload()">&#8634; &nbsp;Chọn file khác</button>
+      </div>
+    </div>
+
+    <!-- Patient info card -->
+    <div class="card">
+      <div class="card-title"><span class="icon">&#128100;</span> Thông tin bệnh nhân</div>
+      <div class="patient-form">
+        <div class="form-row">
+          <div class="field form-full">
+            <label>Họ và tên</label>
+            <input type="text" id="patName" placeholder="Nguyễn Văn A">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field">
+            <label>Năm sinh</label>
+            <input type="number" id="patYear" placeholder="1980" min="1900" max="2026">
+            <div class="field-error" id="errYear">Năm sinh không hợp lệ (1900–2026)</div>
+          </div>
+          <div class="field">
+            <label>Giới tính</label>
+            <select id="patGender">
+              <option value="">-- Chọn --</option>
+              <option>Nam</option>
+              <option>Nữ</option>
+              <option>Khác</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field form-full">
+            <label>Bác sĩ / Người thực hiện</label>
+            <input type="text" id="patDoctor" placeholder="BS. Nguyễn Văn B">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field form-full">
+            <label>Triệu chứng lâm sàng (nếu có)</label>
+            <input type="text" id="patSymptom" placeholder="Đau ngực, khó thở, hồi hộp, chóng mặt...">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sensitivity + Analyze card -->
+    <div class="card">
+      <div class="card-title"><span class="icon">&#9881;&#65039;</span> Mức độ phát hiện</div>
+      <div class="sensitivity-box">
+        <div class="sens-label">Độ nhạy phát hiện bệnh</div>
+        <div class="sens-desc">
+          Mỗi mức dùng cùng model nhưng ngưỡng khác nhau.<br>
+          <strong>Chính xác</strong> = Ngưỡng Youden &nbsp;·&nbsp;
+          <strong>Cân bằng</strong> = F1+Recall &nbsp;·&nbsp;
+          <strong>Nhạy cao</strong> = Ngưỡng thấp — sàng lọc
+        </div>
+        <div class="sens-options">
+          <div class="sens-opt" data-mode="precise" onclick="setSens(this)" role="radio" aria-label="Chế độ chính xác" tabindex="0">
+            <span class="sens-icon">&#127919;</span>
+            <div class="sens-name">Chính xác</div>
+            <div class="sens-hint">Youden · ít dương tính giả</div>
+          </div>
+          <div class="sens-opt active" data-mode="balanced" onclick="setSens(this)" role="radio" aria-label="Chế độ cân bằng" tabindex="0">
+            <span class="sens-icon">&#9878;&#65039;</span>
+            <div class="sens-name">Cân bằng</div>
+            <div class="sens-hint">F1+Recall · phù hợp đa số</div>
+          </div>
+          <div class="sens-opt" data-mode="sensitive" onclick="setSens(this)" role="radio" aria-label="Chế độ nhạy cao" tabindex="0">
+            <span class="sens-icon">&#128269;</span>
+            <div class="sens-name">Nhạy cao</div>
+            <div class="sens-hint">Ngưỡng thấp · phát hiện sớm</div>
+          </div>
+        </div>
+      </div>
+      <button class="btn-analyze" id="btnAnalyze" disabled onclick="analyze()">
+        &#128147; &nbsp; Phân tích ECG
+      </button>
+    </div>
+
+    <!-- History card -->
+    <div class="card" id="historyCard">
+      <div class="card-title">
+        <span class="icon">&#128336;</span> Lịch sử chẩn đoán
+        <span id="histCount" style="font-size:11px;font-weight:400;color:var(--text-dim);margin-left:4px"></span>
+        <div class="card-title-actions">
+          <button class="hist-del" onclick="clearAllHistory()" title="Xóa tất cả">&#128465;</button>
+        </div>
+      </div>
+      <div class="history-list" id="historyList">
+        <div class="history-empty">Chưa có lịch sử phân tích</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT COLUMN -->
+  <div>
+
+    <!-- Empty state -->
+    <div id="emptyState">
+      <div class="empty-illo">&#128147;</div>
+      <div class="empty-title">Chưa có kết quả phân tích</div>
+      <div class="empty-sub">
+        Tải lên file ECG (<strong>.mat</strong> và <strong>.hea</strong>)<br>
+        và nhấn <strong>Phân tích ECG</strong> để nhận kết quả hỗ trợ chẩn đoán.
+      </div>
+    </div>
+
+    <!-- Results wrapper -->
+    <div id="resultsWrap">
+
+      <!-- Report header -->
+      <div class="report-header">
+        <div class="report-left" style="flex:1">
+          <div class="report-subtitle">Kết quả phân tích AI — CardiacAI V4</div>
+          <div class="report-title" id="rptTitle">—</div>
+          <div class="report-meta">
+            <span>&#128197; <span id="rptDate"></span></span>
+            <span>&#128100; <span id="rptInfo"></span></span>
+            <span>&#9877;&#65039; <span id="rptDoctor"></span></span>
+            <span>&#129658; <span id="rptSymptom"></span></span>
+            <span>&#129302; <span class="sens-badge" id="rptModel"></span></span>
+          </div>
+          <div class="report-actions">
+            <button class="btn-print" onclick="printResult()">&#128438; In / Xuất PDF</button>
+            <button class="btn-reanalyze" onclick="scrollToAnalyze()">&#8635; Phân tích lại</button>
+          </div>
+        </div>
+        <div class="verdict-box" id="verdictBox">
+          <div class="verdict-icon" id="verdictIcon"></div>
+          <div class="verdict-label" id="verdictLabel"></div>
+          <div class="verdict-count" id="verdictCount"></div>
+        </div>
+      </div>
+
+      <!-- Positive findings section -->
+      <div id="positiveSection">
+        <div class="summary-card">
+          <div class="card-title" style="color:#dc2626; border-color:#fecaca;">
+            <span class="icon">&#9888;&#65039;</span> Dấu hiệu bất thường phát hiện
+          </div>
+          <div class="findings-grid" id="findingsGrid"></div>
+        </div>
+      </div>
+
+      <!-- ECG Signal Visualization -->
+      <div class="ecg-viz-section" id="ecgVizSection" style="display:none;">
+        <div class="card-title" style="color:var(--blue); border-color:#bfdbfe;">
+          <span class="icon">&#128200;</span> Tín hiệu ECG 12 chuyển đạo
+        </div>
+        <div class="ecg-viz-plot">
+          <img id="ecgVizImg" src="" alt="ECG 12-lead plot">
+        </div>
+      </div>
+
+      <!-- Full 27-label table -->
+      <div class="findings-table">
+        <div class="card-title" style="background:var(--bg); border-radius:0;">
+          <span class="icon">&#128203;</span> Đánh giá toàn bộ 27 chỉ số
+        </div>
+        <div class="ft-toolbar">
+          <label class="ft-toggle-label">
+            <input type="checkbox" id="filterPositive" onchange="filterTable(this.checked)">
+            Chỉ hiển thị dương tính
+          </label>
+        </div>
+        <div class="ft-row header">
+          <div>Dấu hiệu</div>
+          <div>Tín hiệu · Ngưỡng</div>
+          <div>Xác suất</div>
+          <div>Mức độ</div>
+          <div>Kết quả</div>
+        </div>
+        <div id="fullTable"></div>
+      </div>
+
+      <!-- Disclaimer -->
+      <div class="disclaimer">
+        <span class="disclaimer-icon">&#9888;&#65039;</span>
+        <span>
+          Kết quả này do hệ thống AI tạo ra nhằm <strong>hỗ trợ</strong> phân tích điện tâm đồ,
+          không thay thế chẩn đoán lâm sàng của bác sĩ. Quyết định điều trị cần dựa trên
+          thăm khám toàn diện và xét nghiệm bổ sung khi cần thiết.
+        </span>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════
+// CardiacAI V4 Frontend — kết nối Flask backend
+// ═══════════════════════════════════════════════════════════════════════
+
+let selectedMatFile = null;
+let selectedHeaFile = null;
+let currentMode     = 'balanced';
+let hasFiles        = false;
+let ecgPlotSrc      = '';
+let diagnosisHistory = [];
+
+const SEV_LABEL = {
+  danger:  'Nguy hiểm',
+  warning: 'Cảnh báo',
+  info:    'Thông tin',
+  normal:  'Bình thường'
+};
+
+/* ── Toast notification ─────────────────────────────────────────────── */
+function showToast(type, message, duration = 4000) {
+  const icons = { error: '&#10060;', success: '&#9989;', info: '&#8505;&#65039;' };
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `
+    <span class="toast-icon">${icons[type] || ''}</span>
+    <span style="flex:1">${message}</span>
+    <button class="toast-close" onclick="this.parentElement.remove()">&#10005;</button>`;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.animation = 'toastOut .3s ease forwards';
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
+}
+
+/* ── Clock ──────────────────────────────────────────────────────────── */
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+/* ── Sensitivity selector ───────────────────────────────────────────── */
+function setSens(el) {
+  document.querySelectorAll('.sens-opt').forEach(o => o.classList.remove('active'));
+  el.classList.add('active');
+  currentMode = el.dataset.mode;
+}
+
+/* ── Drag & Drop ────────────────────────────────────────────────────── */
+function setupDragDrop(slotId, inputId, ext, handler) {
+  const slot = document.getElementById(slotId);
+  slot.addEventListener('dragover', e => { e.preventDefault(); slot.classList.add('dragging'); });
+  slot.addEventListener('dragleave', () => slot.classList.remove('dragging'));
+  slot.addEventListener('drop', e => {
+    e.preventDefault();
+    slot.classList.remove('dragging');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(ext)) {
+      showToast('error', `Vui lòng chọn file ${ext} hợp lệ`);
+      return;
+    }
+    handler(file);
+  });
+}
+
+/* ── File upload ────────────────────────────────────────────────────── */
+const fileMat = document.getElementById('fileMat');
+const fileHea = document.getElementById('fileHea');
+
+function handleMatFile(file) {
+  selectedMatFile = file;
+  document.getElementById('matName').textContent = file.name;
+  document.getElementById('slotMat').classList.add('has-file');
+  checkBothFiles();
+}
+function handleHeaFile(file) {
+  selectedHeaFile = file;
+  document.getElementById('heaName').textContent = file.name;
+  document.getElementById('slotHea').classList.add('has-file');
+  checkBothFiles();
+}
+
+fileMat.addEventListener('change', () => {
+  if (!fileMat.files[0]) return;
+  const file = fileMat.files[0];
+  if (!file.name.toLowerCase().endsWith('.mat')) {
+    showToast('error', 'Vui lòng chọn file .mat hợp lệ');
+    fileMat.value = ''; return;
+  }
+  handleMatFile(file);
+});
+fileHea.addEventListener('change', () => {
+  if (!fileHea.files[0]) return;
+  const file = fileHea.files[0];
+  if (!file.name.toLowerCase().endsWith('.hea')) {
+    showToast('error', 'Vui lòng chọn file .hea hợp lệ');
+    fileHea.value = ''; return;
+  }
+  handleHeaFile(file);
+});
+
+setupDragDrop('slotMat', 'fileMat', '.mat', handleMatFile);
+setupDragDrop('slotHea', 'fileHea', '.hea', handleHeaFile);
+
+function checkBothFiles() {
+  if (selectedMatFile && selectedHeaFile) {
+    document.getElementById('btnAnalyze').disabled = false;
+    hasFiles = true;
+    fetchEcgPlot();
+  }
+}
+
+function resetUpload() {
+  selectedMatFile = null; selectedHeaFile = null;
+  hasFiles = false; ecgPlotSrc = '';
+  fileMat.value = ''; fileHea.value = '';
+  document.getElementById('matName').textContent = 'Chưa chọn file';
+  document.getElementById('heaName').textContent = 'Chưa chọn file';
+  document.getElementById('slotMat').classList.remove('has-file');
+  document.getElementById('slotHea').classList.remove('has-file');
+  document.getElementById('btnAnalyze').disabled = true;
+  document.getElementById('ecgPlotWrap').style.display = 'none';
+  document.getElementById('uploadPair').style.display = 'grid';
+  document.getElementById('emptyState').style.display = 'block';
+  document.getElementById('resultsWrap').style.display = 'none';
+}
+
+/* ── Validate form ──────────────────────────────────────────────────── */
+function validateForm() {
+  let valid = true;
+  const yearInput = document.getElementById('patYear');
+  const errYear   = document.getElementById('errYear');
+  const year = parseInt(yearInput.value);
+  if (yearInput.value && (isNaN(year) || year < 1900 || year > 2026)) {
+    yearInput.classList.add('invalid');
+    errYear.classList.add('show');
+    valid = false;
+  } else {
+    yearInput.classList.remove('invalid');
+    errYear.classList.remove('show');
+  }
+  return valid;
+}
+
+/* ── Fetch ECG plot preview ─────────────────────────────────────────── */
+async function fetchEcgPlot() {
+  const formData = new FormData();
+  formData.append('mat_file', selectedMatFile);
+  formData.append('hea_file', selectedHeaFile);
+  try {
+    const resp = await fetch('/ecg-plot', { method: 'POST', body: formData });
+    const data = await resp.json();
+    if (data.success) {
+      ecgPlotSrc = data.ecg_plot;
+      document.getElementById('ecgPlotImg').src = data.ecg_plot;
+      document.getElementById('plotInfo').textContent =
+        `${data.fs} Hz · ${data.duration_sec}s · ${data.n_samples.toLocaleString()} mẫu`;
+      document.getElementById('uploadPair').style.display = 'none';
+      document.getElementById('ecgPlotWrap').style.display = 'block';
+    }
+  } catch (err) {
+    console.warn('ECG plot preview failed:', err);
+  }
+}
+
+/* ── Analyze ────────────────────────────────────────────────────────── */
+async function analyze() {
+  if (!selectedMatFile || !selectedHeaFile) return;
+  if (!validateForm()) {
+    showToast('error', 'Vui lòng kiểm tra lại thông tin bệnh nhân');
+    return;
+  }
+
+  const overlay    = document.getElementById('loadingOverlay');
+  const stepEl     = document.getElementById('loadStep');
+  const progressEl = document.getElementById('progressFill');
+  const btn        = document.getElementById('btnAnalyze');
+
+  overlay.classList.add('show');
+  btn.disabled = true;
+  progressEl.style.width = '0%';
+
+  const steps = [
+    'Đang đọc tín hiệu ECG 12 chuyển đạo...',
+    'Chuẩn hóa và cắt/pad tín hiệu (4096 mẫu)...',
+    'TTA round 1/4 — dự đoán không augment...',
+    'TTA round 2-4 — augment nhẹ và dự đoán...',
+    'Áp dụng ngưỡng và đánh giá 27 bệnh...',
+  ];
+  let si = 0;
+  const iv = setInterval(() => {
+    stepEl.textContent = steps[si % steps.length];
+    progressEl.style.width = ((si + 1) / steps.length * 85) + '%';
+    si++;
+  }, 1200);
+
+  try {
+    const formData = new FormData();
+    formData.append('mat_file', selectedMatFile);
+    formData.append('hea_file', selectedHeaFile);
+    formData.append('sensitivity', currentMode);
+
+    const resp = await fetch('/predict', { method: 'POST', body: formData });
+    const data = await resp.json();
+
+    clearInterval(iv);
+    progressEl.style.width = '100%';
+    setTimeout(() => {
+      overlay.classList.remove('show');
+      progressEl.style.width = '0%';
+    }, 400);
+
+    if (data.error) {
+      showToast('error', 'Lỗi từ server: ' + data.error);
+      btn.disabled = false;
+      return;
+    }
+
+    const results = data.results.map(r => ({
+      vi:       r.label_vi,
+      en:       r.label_en,
+      abbr:     r.abbreviation,
+      prob:     r.prob,
+      thr:      r.threshold,
+      positive: r.positive,
+      severity: r.severity,
+    })).sort((a, b) => b.prob - a.prob);
+
+    if (data.ecg_plot) ecgPlotSrc = data.ecg_plot;
+
+    showResults(results, data.sensitivity_name);
+    showToast('success', 'Phân tích hoàn tất!');
+
+  } catch (err) {
+    clearInterval(iv);
+    overlay.classList.remove('show');
+    progressEl.style.width = '0%';
+    showToast('error', 'Không kết nối được server: ' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ── Show results ───────────────────────────────────────────────────── */
+function showResults(results, modelInfo) {
+  document.getElementById('emptyState').style.display  = 'none';
+  document.getElementById('resultsWrap').style.display = 'block';
+
+  const name    = document.getElementById('patName').value    || 'Bệnh nhân';
+  const year    = document.getElementById('patYear').value    || '—';
+  const gender  = document.getElementById('patGender').value  || '—';
+  const symptom = document.getElementById('patSymptom').value || 'Không có';
+  const doctor  = document.getElementById('patDoctor').value  || '—';
+  const now     = new Date();
+  const dateStr = now.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    + ' ' + now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+
+  document.getElementById('rptTitle').textContent   = name;
+  document.getElementById('rptDate').textContent    = dateStr;
+  document.getElementById('rptInfo').textContent    = `${gender} · Năm sinh: ${year}`;
+  document.getElementById('rptSymptom').textContent = symptom;
+  document.getElementById('rptDoctor').textContent  = doctor;
+  document.getElementById('rptModel').textContent   = modelInfo || 'Cân bằng';
+
+  const positives  = results.filter(r => r.positive && r.abbr !== 'SNR');
+  const hasDanger  = positives.some(r => r.severity === 'danger');
+  const hasWarning = positives.some(r => r.severity === 'warning');
+  const vBox  = document.getElementById('verdictBox');
+  const vIcon = document.getElementById('verdictIcon');
+  const vLbl  = document.getElementById('verdictLabel');
+  const vCnt  = document.getElementById('verdictCount');
+
+  let histStatus = 'normal';
+  if (positives.length === 0) {
+    vBox.className    = 'verdict-box normal';
+    vIcon.textContent = '\u2705';
+    vLbl.textContent  = 'Nhịp xoang bình thường';
+    vCnt.textContent  = 'Không phát hiện bất thường';
+    document.getElementById('positiveSection').style.display = 'none';
+    histStatus = 'normal';
+  } else {
+    if (hasDanger) {
+      vBox.className    = 'verdict-box abnormal';
+      vIcon.textContent = '\uD83D\uDEA8';
+      histStatus = 'danger';
+    } else {
+      vBox.className    = 'verdict-box warning';
+      vIcon.textContent = '\u26A0\uFE0F';
+      histStatus = 'warning';
+    }
+    vLbl.textContent  = `${positives.length} dấu hiệu bất thường`;
+    vCnt.textContent  = hasDanger ? 'Có bệnh nguy hiểm — cần đánh giá ngay' : 'Cần đánh giá thêm';
+    document.getElementById('positiveSection').style.display = 'block';
+    renderFindingCards(positives);
+  }
+
+  if (ecgPlotSrc) {
+    document.getElementById('ecgVizSection').style.display = 'block';
+    document.getElementById('ecgVizImg').src = ecgPlotSrc;
+  }
+
+  renderFullTable(results);
+  document.getElementById('resultsWrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Lưu vào lịch sử
+  saveHistory({
+    name, year, gender, doctor, symptom,
+    date: dateStr,
+    status: histStatus,
+    positiveCount: positives.length,
+    sensitivity: modelInfo || 'Cân bằng',
+    positives: positives.map(p => p.vi + ' (' + p.abbr + ')'),
+    results,
+    ecgPlot: ecgPlotSrc,
+  });
+}
+
+/* ── Finding cards ──────────────────────────────────────────────────── */
+function renderFindingCards(positives) {
+  const grid = document.getElementById('findingsGrid');
+  grid.innerHTML = '';
+  positives.forEach((r, i) => {
+    const pct    = (r.prob * 100).toFixed(1);
+    const thr    = (r.thr  * 100).toFixed(0);
+    const cls    = r.prob >= .7 ? 'high' : r.prob >= .5 ? 'mid' : 'low';
+    const safeId = r.abbr.replace(/[^a-zA-Z0-9]/g, '_');
+    const sevLbl = SEV_LABEL[r.severity] || '';
+    const card = document.createElement('div');
+    card.className = `finding-card positive sev-${r.severity}`;
+    card.style.animationDelay = `${i * 60}ms`;
+    card.innerHTML = `
+      <div class="finding-top">
+        <div>
+          <div class="finding-name">${r.vi} <small style="color:var(--text-dim);font-weight:400">(${r.abbr})</small></div>
+          <div class="finding-name-en">${r.en}</div>
+        </div>
+        <div class="finding-badges">
+          <span class="severity-badge ${r.severity}">${sevLbl}</span>
+        </div>
+      </div>
+      <div class="confidence-row">
+        <span class="conf-label">Tín hiệu</span>
+        <div class="conf-track">
+          <div class="conf-fill ${cls}" id="cf-${safeId}"></div>
+          <div class="thr-mark" style="left:${thr}%" data-label="ngưỡng ${thr}%"></div>
+        </div>
+        <span class="conf-pct">${pct}%</span>
+      </div>
+      <div class="finding-thr-info">${pct}% ≥ ngưỡng ${thr}% → Dương tính</div>`;
+    grid.appendChild(card);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const el = document.getElementById(`cf-${safeId}`);
+      if (el) el.style.width = `${r.prob * 100}%`;
+    }));
+  });
+}
+
+/* ── Full table ─────────────────────────────────────────────────────── */
+function renderFullTable(results) {
+  const table = document.getElementById('fullTable');
+  table.innerHTML = '';
+  document.getElementById('filterPositive').checked = false;
+  results.forEach((r, i) => {
+    const pct    = (r.prob * 100).toFixed(1);
+    const thr    = (r.thr  * 100).toFixed(0);
+    const pos    = r.positive;
+    const sevLbl = SEV_LABEL[r.severity] || '';
+    const row = document.createElement('div');
+    row.className = 'ft-row';
+    row.dataset.pos = pos ? '1' : '0';
+    row.style.animationDelay = `${i * 30}ms`;
+    row.innerHTML = `
+      <div>
+        <div class="ft-name">${r.vi}</div>
+        <div class="ft-abbr">${r.abbr}</div>
+      </div>
+      <div class="ft-bar">
+        <div class="ft-bar-track">
+          <div class="ft-bar-fill ${pos ? 'pos' : 'neg'}" id="fb-${i}"></div>
+          <div class="ft-thr-mark" style="left:${thr}%"></div>
+        </div>
+      </div>
+      <div>
+        <div class="ft-pct">${pct}%</div>
+        <div class="ft-thr-sub">ngưỡng ${thr}%</div>
+      </div>
+      <div><span class="severity-badge ${r.severity}">${sevLbl}</span></div>
+      <div><span class="ft-tag ${pos ? 'pos' : 'neg'}">${pos ? 'Dương tính' : 'Âm tính'}</span></div>`;
+    table.appendChild(row);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const el = document.getElementById(`fb-${i}`);
+      if (el) el.style.width = `${r.prob * 100}%`;
+    }));
+  });
+}
+
+/* ── Filter table ───────────────────────────────────────────────────── */
+function filterTable(onlyPos) {
+  document.querySelectorAll('#fullTable .ft-row').forEach(row => {
+    row.style.display = (!onlyPos || row.dataset.pos === '1') ? '' : 'none';
+  });
+}
+
+/* ── Scroll to analyze ──────────────────────────────────────────────── */
+function scrollToAnalyze() {
+  document.getElementById('btnAnalyze').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+/* ── Print result ───────────────────────────────────────────────────── */
+function printResult() {
+  window.print();
+}
+
+/* ── History ────────────────────────────────────────────────────────── */
+function loadHistory() {
+  try {
+    const raw = sessionStorage.getItem('cardiacai_history');
+    diagnosisHistory = raw ? JSON.parse(raw) : [];
+  } catch { diagnosisHistory = []; }
+}
+
+function saveHistoryToStorage() {
+  try { sessionStorage.setItem('cardiacai_history', JSON.stringify(diagnosisHistory)); } catch {}
+}
+
+function saveHistory(entry) {
+  entry.id = Date.now();
+  diagnosisHistory.unshift(entry);
+  if (diagnosisHistory.length > 20) diagnosisHistory = diagnosisHistory.slice(0, 20);
+  saveHistoryToStorage();
+  renderHistory();
+}
+
+function deleteHistory(id) {
+  diagnosisHistory = diagnosisHistory.filter(h => h.id !== id);
+  saveHistoryToStorage();
+  renderHistory();
+}
+
+function clearAllHistory() {
+  if (!diagnosisHistory.length) return;
+  diagnosisHistory = [];
+  saveHistoryToStorage();
+  renderHistory();
+  showToast('info', 'Đã xóa toàn bộ lịch sử');
+}
+
+function renderHistory() {
+  const list = document.getElementById('historyList');
+  const countEl = document.getElementById('histCount');
+  countEl.textContent = diagnosisHistory.length ? `(${diagnosisHistory.length})` : '';
+  if (!diagnosisHistory.length) {
+    list.innerHTML = '<div class="history-empty">Chưa có lịch sử phân tích</div>';
+    return;
+  }
+  list.innerHTML = diagnosisHistory.map(h => {
+    const badgeText = h.status === 'normal' ? 'Bình thường'
+      : h.status === 'danger' ? `${h.positiveCount} bệnh nguy hiểm`
+      : `${h.positiveCount} bất thường`;
+    return `
+      <div class="history-item" onclick="restoreHistory(${h.id})">
+        <div class="hist-dot ${h.status}"></div>
+        <div class="hist-info">
+          <div class="hist-name">${h.name}</div>
+          <div class="hist-meta">${h.date} · ${h.sensitivity}</div>
+        </div>
+        <span class="hist-badge ${h.status}">${badgeText}</span>
+        <button class="hist-del" onclick="event.stopPropagation();deleteHistory(${h.id})" title="Xóa">&#10005;</button>
+      </div>`;
+  }).join('');
+}
+
+function restoreHistory(id) {
+  const h = diagnosisHistory.find(x => x.id === id);
+  if (!h) return;
+
+  // Điền lại thông tin bệnh nhân
+  document.getElementById('patName').value    = h.name !== 'Bệnh nhân' ? h.name : '';
+  document.getElementById('patYear').value    = h.year !== '—' ? h.year : '';
+  document.getElementById('patSymptom').value = h.symptom !== 'Không có' ? h.symptom : '';
+  document.getElementById('patDoctor').value  = h.doctor !== '—' ? h.doctor : '';
+
+  // Khôi phục sensitivity
+  document.querySelectorAll('.sens-opt').forEach(opt => {
+    opt.classList.toggle('active', opt.querySelector('.sens-name').textContent === h.sensitivity);
+  });
+
+  // Hiện lại kết quả
+  if (h.ecgPlot) {
+    ecgPlotSrc = h.ecgPlot;
+    document.getElementById('ecgPlotImg').src = h.ecgPlot;
+    document.getElementById('uploadPair').style.display = 'none';
+    document.getElementById('ecgPlotWrap').style.display = 'block';
+  }
+
+  showResultsFromHistory(h);
+  showToast('info', `Đã tải lại kết quả: ${h.name}`);
+}
+
+function showResultsFromHistory(h) {
+  document.getElementById('emptyState').style.display  = 'none';
+  document.getElementById('resultsWrap').style.display = 'block';
+
+  document.getElementById('rptTitle').textContent   = h.name;
+  document.getElementById('rptDate').textContent    = h.date;
+  document.getElementById('rptInfo').textContent    = `${h.gender} · Năm sinh: ${h.year}`;
+  document.getElementById('rptSymptom').textContent = h.symptom;
+  document.getElementById('rptDoctor').textContent  = h.doctor;
+  document.getElementById('rptModel').textContent   = h.sensitivity;
+
+  const positives = h.results.filter(r => r.positive && r.abbr !== 'SNR');
+  const hasDanger = positives.some(r => r.severity === 'danger');
+  const vBox  = document.getElementById('verdictBox');
+  const vIcon = document.getElementById('verdictIcon');
+  const vLbl  = document.getElementById('verdictLabel');
+  const vCnt  = document.getElementById('verdictCount');
+
+  if (positives.length === 0) {
+    vBox.className = 'verdict-box normal';
+    vIcon.textContent = '\u2705';
+    vLbl.textContent  = 'Nhịp xoang bình thường';
+    vCnt.textContent  = 'Không phát hiện bất thường';
+    document.getElementById('positiveSection').style.display = 'none';
+  } else {
+    vBox.className    = hasDanger ? 'verdict-box abnormal' : 'verdict-box warning';
+    vIcon.textContent = hasDanger ? '\uD83D\uDEA8' : '\u26A0\uFE0F';
+    vLbl.textContent  = `${positives.length} dấu hiệu bất thường`;
+    vCnt.textContent  = hasDanger ? 'Có bệnh nguy hiểm — cần đánh giá ngay' : 'Cần đánh giá thêm';
+    document.getElementById('positiveSection').style.display = 'block';
+    renderFindingCards(positives);
+  }
+
+  if (h.ecgPlot) {
+    document.getElementById('ecgVizSection').style.display = 'block';
+    document.getElementById('ecgVizImg').src = h.ecgPlot;
+  }
+
+  renderFullTable(h.results);
+  document.getElementById('resultsWrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* ── Init ───────────────────────────────────────────────────────────── */
+loadHistory();
+renderHistory();
+</script>
+</body>
+</html>
