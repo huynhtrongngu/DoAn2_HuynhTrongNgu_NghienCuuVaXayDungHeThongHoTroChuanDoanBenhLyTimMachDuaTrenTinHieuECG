@@ -1,0 +1,5 @@
+flask>=2.3
+torch>=2.0
+numpy>=1.24
+matplotlib>=3.7
+wfdb>=4.1
