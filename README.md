@@ -1,4 +1,6 @@
-# HỆ THỐNG HỖ TRỢ CHẨN ĐOÁN BỆNH LÝ TIM MẠCH QUA TÍN HIỆU ECG 12 CHUYỂN ĐẠO (AI)
+# [HỆ THỐNG HỖ TRỢ CHẨN ĐOÁN BỆNH LÝ TIM MẠCH QUA TÍN HIỆU ECG 12 CHUYỂN ĐẠO (AI)](https://huggingface.co/spaces/huynhtrongngu/ECGDoan2)
+
+# ➡️[Xem Demo Dự Án Ở Đây](https://huggingface.co/spaces/huynhtrongngu/ECGDoan2)⬅️
 
 > **Dự án Nghiên cứu & Phát triển:** Ứng dụng mạng Multi-scale CNN kết hợp Transformer để phân loại đa nhãn 27 bệnh lý tim mạch trên bộ dữ liệu chuẩn lâm sàng PhysioNet Challenge 2020.
 
